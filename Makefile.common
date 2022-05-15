@@ -1,0 +1,758 @@
+# ---*-----------------------(----------------------------------------------------------------------------------------------------
+#  (  `             )        )\ )                   
+#  )\))(      )  ( /(    (  (()/(  (   (      (     
+# ((_)()\  ( /(  )\())  ))\  /(_)) )\  )(    ))\    
+# (_()((_) )(_))((_)\  /((_)(_))_|((_)(()\  /((_)   
+# |  \/  |((_)_ | |(_)(_))  | |_   (_) ((_)(_))     
+# | |\/| |/ _` || / / / -_) | __|  | || '_|/ -_)    
+# |_|  |_|\__,_||_\_\ \___| |_|    |_||_|  \___|    Makefire: Makefile in flames
+# --------------------------------------------------------------------------------------------------------------------------------
+
+# MAKEFLAGS += -s
+
+# This makes sure that regex match for vVALID, vPATCH and vRC is working
+SHELL:=/bin/bash
+
+.PHONY: clean cleanall cleanbases cleantemps cleanimages cleanvolumes showimages
+.PHONY: tools tagdebug changelog bump gogen gofmt golint govet goshow godistlist
+.PHONY: gomodlistupds gomodupdateall goexogotoken goexogolist goexogoupdate
+.PHONY: fileinfo genmodels test version copyright chownqueries gitprecommit
+
+gitprecommit:    ## Install .git/hooks/pre-commit script
+	@if [ -e .git/hooks/pre-commit ] ; then \
+		echo "There is file .git/hooks/pre-commit already installed"; false; \
+	fi;
+	wget https://gist.githubusercontent.com/diegosz/d970596a9dab4e63cbc3024296b87443/raw/70cdc78475345d3d341ae48d160d2f61ee1f4a5e/pre-commit -P .git/hooks/
+	chmod +x .git/hooks/pre-commit
+
+--checkgitprecommit:
+	@if [ ! -s .git/hooks/pre-commit ]; then \
+		echo Warning: missing .git/hooks/pre-commit script. Run make gitprecommit; exit 1; \
+	fi
+
+GOPATH ?= $(shell go env GOPATH)
+
+ifndef GOPATH
+override GOPATH = $(HOME)/go
+endif
+
+ifdef GOPRIVATE
+GOPRIVATE := $(GOPRIVATE),go.goexogo.com
+else
+GOPRIVATE := go.goexogo.com
+endif
+
+export GO111MODULE := on
+
+BIN_DIR := $(GOPATH)/bin
+
+BUILD_DIR=build
+RELEASE_DIR=release
+
+clean:           ## Delete all files inside `build` folder
+	@$(call rm,${BUILD_DIR}/*)
+
+cleanbases:      ## Delete project docker base images
+	docker images --format '{{.Repository}}:{{.Tag}}' | uniq \
+	| grep $(DOCKER_IMAGE_GROUP_NAME)/base- | xargs -r docker rmi
+
+cleantemps:      ## Delete project docker temp images
+	docker images --format '{{.Repository}}:{{.Tag}}' | uniq \
+	| grep $(DOCKER_IMAGE_GROUP_NAME)/temp- | xargs -r docker rmi
+
+cleanimages:     ## Delete project docker images, except the base images
+	docker images --format '{{.Repository}}:{{.Tag}}' | uniq \
+	| grep $(DOCKER_IMAGE_GROUP_NAME) | grep -v $(DOCKER_IMAGE_GROUP_NAME)/base | xargs -r docker rmi
+
+cleanvolumes:    ## Remove unused project docker volumes
+	docker volume ls -f name=$(DOCKER_IMAGE_GROUP_NAME) -f dangling=true -q | xargs -r docker volume rm
+
+# cleanall:        ## Clean everything: clean cleanvolumes cleanimages cleantemps cleanbases
+cleanall: clean cleanvolumes cleanimages cleantemps cleanbases
+
+showimages:      ## Show project docker images
+	@docker images | grep $(DOCKER_IMAGE_GROUP_NAME) || echo No \"$(DOCKER_IMAGE_GROUP_NAME)\" images found.
+
+# tools:           ## Download and install go tools defined in tools.go
+tools: --checkgitprecommit
+	@echo Installing tools from tools/tools.go
+	@cat tools/tools.go | grep _ | awk -F'"' '{print $$2}' | xargs -tI % go install %
+	@for p in  $(TOOLS_ADDITIONAL_GO_GET); \
+    do \
+    	go get -u $$p ; \
+	done
+
+targets:         ## Shows the available targets
+
+	@echo "commands:         Builds all the defined commands into the build folder, optionally builder=yes and/or nocache=yes"
+	@echo "lnxcmds:          Builds all the defined linux commands into the build folder, optionally builder=yes and/or nocache=yes"
+	@echo "wincmds:          Builds all the defined windows commands into the build folder, optionally builder=yes and/or nocache=yes"
+	@echo "winguis:          Builds all the defined windows GUI commands into the build folder, optionally builder=yes and/or nocache=yes"
+	@echo "services:         Builds all the defined services into the build folder, optionally builder=yes and/or nocache=yes"
+	@echo "all:              Builds all the defined commands and services into build folder and docker images, optionally builder=yes and/or nocache=yes"
+	@echo "dockers:          Builds all the defined services docker images as latest using binaries from build folder, optionally builder=yes and/or nocache=yes"
+	@echo "dockers_rel:      Builds all the defined services docker images with the defined tag using a go docker builder"
+	@echo "dockers_push:     Pushes the docker images builded using dockers_rel with the defined tag"
+	@echo "builds:           Builds all the defined commands with the defined tag into the release folder using a docker go builder"
+	@echo "package:          Creates a release package with the defined tag into the package folder"
+	@echo "release:          Release runs builds, dockers_rel, push and pacakge with the defined tag"
+	@echo "lnxcmd set:       $(LNXCMDS)"
+	@echo "wincmd set:       $(WINCMDS)"
+	@echo "wingui set:       $(WINGUIS)"
+	@echo "command set:      = lnxcmds + wincmds + winguis"
+	@echo "build_lnxcmd set: $(BUILD_LNXCMDS)"
+	@echo "build_wincmd set: $(BUILD_WINCMDS)"
+	@echo "build_wingui set: $(BUILD_WINGUIS)"
+	@echo "build set:        = build_lnxcmds + build_wincmds + build_winguis"
+	@echo "service set:      $(SERVICES)"
+	@echo "docker set:       $(DOCKERS)"
+	@echo "docker_rel set:   $(DOCKERS_REL)"
+	@echo "docker_push set:  $(DOCKERS_PUSH)"
+	@echo "docker_extra set: $(DOCKERS_EXTRA)"
+	@echo "release include:  $(RELEASE_INCLUDE)"
+
+vTAG := $(tag)
+ifndef tag
+	vTAG = v0
+endif
+
+vFULL  := $(vTAG)
+# Is this a valid version?
+vVALID := $(shell [[ $(vFULL) =~ ^v[0-9]+\.[0-9]+\.[0-9]+((-[0-9a-zA-Z]+)?$$|(-[0-9a-zA-Z]+\.[0-9a-zA-Z]+)?$$)$$ ]] && echo "yes")
+# Is this a round version?
+vROUND := $(shell [[ $(vFULL) =~ ^v[0-9]+(\.[0-9]+)?$$ ]] && echo "yes")
+# Is this a patch?
+vPATCH := $(shell [[ $(vFULL) =~ ^v[0-9]+\.[0-9]+\.([0-9]+)(-[0-9a-zA-Z]+)?(\.[0-9a-zA-Z]+)?$$ ]] && echo "yes")
+# Is this a release candidate?
+vRC    := $(shell [[ $(vFULL) =~ \-(rc|RC|Rc)(.[0-9a-zA-Z]+)?$$ ]] && echo "yes")
+
+# If not valid but round then add .0 suffix and revalidate
+ifeq ($(vVALID),)
+ifeq ($(vROUND),yes)
+	vFULL := $(addsuffix .0,$(vFULL))
+	vVALID := $(shell [[ $(vFULL) =~ ^v[0-9]+\.[0-9]+\.[0-9]+((-[0-9a-zA-Z]+)?$$|(-[0-9a-zA-Z]+\.[0-9a-zA-Z]+)?$$)$$ ]] && echo "yes")
+endif
+endif
+
+# The actual shorten version
+vSHORT := $(word 1,$(subst ., ,$(vFULL))).$(word 2,$(subst ., ,$(vFULL)))
+
+ifeq ($(vVALID),yes)
+	TAG := $(vFULL)
+endif
+
+tagdebug:        ## Show the tag validation, run as: make tagdebug tag=v0.0.1
+	@$(call echo,tag    : $(tag))
+	@$(call echo,vFULL  : $(vFULL))
+	@$(call echo,vVALID : $(vVALID))
+	@$(call echo,vROUND : $(vROUND))
+	@$(call echo,vPATCH : $(vPATCH))
+	@$(call echo,vRC    : $(vRC))
+	@$(call echo,vSHORT : $(vSHORT))
+	@$(call echo,TAG    : $(TAG))
+	@if [ "$(TAG)" != "$(VERSION)" ]; then \
+		echo TAG does not match git tag VERSION: $(VERSION); \
+	else \
+		echo TAG does match git tag VERSION; \
+	fi
+
+define verify_tag
+	@if [ -z $(tag) ]; then \
+		echo Tag not defined. Make sure you specify it, eg: make changelog tag=v0.0.1; exit 1;\
+	fi
+	@if [ "$(vVALID)" != "yes" ]; then \
+		echo Tag is invalid. Make sure that it complies with the Semantic Versioning specification; exit 1;\
+	fi
+	@if [ "$(TAG)" != "$(VERSION)" ]; then \
+		echo TAG does not match git tag VERSION: $(VERSION); exit 1;\
+	fi
+endef
+
+define verify_tag_version
+	@$(call verify_tag)
+	@if [ "$(TAG)" != "$(VERSION)" ]; then \
+		echo TAG does not match git tag VERSION: $(VERSION); exit 1;\
+	fi
+endef
+
+# $(call check-var-defined,tag)
+check-var-defined = $(if $(strip $($1)),,$(error "$1" is not defined))
+
+# changelog:       ## Creates a dummy CHANGELOG-REVIEW.md file with the especified tag for review
+changelog: tools
+	@$(call verify_tag)
+	@git-chglog -c .chglog/config.yml --next-tag $(TAG) -o CHANGELOG-REVIEW.md
+
+# bump:            ## Create, git commit and git tag the CHANGELOG.md file with the especified tag
+bump: tools
+	@$(call verify_tag)
+	@git-chglog -c .chglog/config.yml --next-tag $(TAG) -o CHANGELOG.md
+	@git add CHANGELOG.md
+	@git commit -m "release: $(TAG)"
+	@git tag -a $(TAG) -m "release: $(TAG)"
+
+# gogen:           ## Run go generate recursively in the project
+gogen: tools
+	@go generate ./...
+
+gofmt:           ## Run go fmt recursively in the project
+	@go fmt ./...
+
+# golint:          ## Run golanci-lint recursively in the project
+golint: tools
+	@golangci-lint run ./... --skip-dirs-use-default
+
+# govet:           ## Run go vet recursively in the project
+govet: tools
+	@go vet ./...
+
+gomodlistupds:   ## List available minor and patch dependency updates
+	@go list -u -m all | grep ]
+
+gomodupdateall:  ## Get available minor and patch dependency updates
+	@go get -t -u ./...
+
+goexogotoken:    ## Set private repo access token in .netrc file in home folder
+	@printf "machine gitlab.com login ${GO_MODULES_DEPLOY_TOKEN_USERNAME} password ${GO_MODULES_DEPLOY_TOKEN_PASSWORD}\n" >> ~/.netrc
+	@chmod 600 ~/.netrc
+
+goexogolist:     ## List goexogo dependencies
+	@go list -u -m all | grep go.goexogo.com
+
+goexogoupdate:   ## Get available minor and patch dependency updates
+	@grep go.goexogo.com go.mod | awk '{print $$1}' | xargs -I {} go get -t -u {}
+
+godistlist:      ## List the supported go distributions and architectures
+	@go tool dist list | column -c 75 | column -t
+
+# If the first argument is "fileinfo"...
+ifeq (fileinfo,$(firstword $(MAKECMDGOALS)))
+	# use the rest as arguments
+	FILEINFO_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+	# ...and turn them into do-nothing targets
+	$(eval $(FILEINFO_ARGS):;@:)
+endif
+
+fileinfo:        ## Show file information, including distribution and architecture in case of executables
+	@file $(FILEINFO_ARGS)
+
+copyright:       ## Add or update copyright recursively in the project
+	@go run tools/update-license/main.go -skip config $(PWD)
+
+genmodels:       ## Generate sqlboiler DB models
+	@find . -type f -name '*.toml' -path "./sqlboiler/*" -exec sqlboiler psql --config {} ';'
+	@find ./models/ -name "*.go" -not -name "boil_*" -type f | xargs -r sed -i -e '/strconv/d'
+
+chownqueries:    ## Fix ownership of queries and fragments generated by Graphjin
+	sudo chown -R $(USER):$(USER) config/graphjin/queries
+	sudo chown -R $(USER):$(USER) config/graphjin/fragments
+
+GOMODULE = $(shell head -n1 go.mod | awk '{print $$2}')
+
+GOSRCDIRS = $(shell \
+	find . -name "*.go" -not -path "./vendor/*" | \
+	xargs -I {} dirname {}  | \
+	uniq)
+
+TESTPKGS = $(or $(PKG),$(shell \
+	find . -name "*_test.go" -not -path "./vendor/*" | \
+	xargs -I {} dirname {}  | \
+	uniq))
+
+CMDS = $(shell find . -type d -path "./cmd/*" -exec basename {} ';')
+
+# When invoked on an executable, go version prints the version of Go used to build the executable.
+GOVERSION = $(shell go version | awk '{print $$3}' | sed -e "s/^go//")
+
+goshow:          ## Show the go environment variables, commands, go source and test folders
+	@$(call echo,GOVERSION   : $(GOVERSION))
+	@$(call echo,GOPATH      : $(GOPATH))
+	@$(call echo,GO111MODULE : $(GO111MODULE))
+	@$(call echo,CMDS        : $(CMDS))
+	@$(call echo,GOSRCDIRS   : $(GOSRCDIRS))
+	@$(call echo,TESTPKGS    : $(TESTPKGS))
+	@$(call echo,GOMODULE    : $(GOMODULE))
+
+TIMEOUT       = 300
+TEST_TARGETS := test-default test-bench test-short test-verbose test-race
+test-bench:   ARGS=-run=__absolutelynothing__ -bench=.
+test-short:   ARGS=-short
+test-verbose: ARGS=-v
+test-race:    ARGS=-race
+$(TEST_TARGETS): test
+# test:            ## Run the project tests, optionally: test-default test-bench test-short test-verbose test-race
+ifeq ($(TESTPKGS),)
+test:
+	@echo "No go tests found."
+else
+test:
+	go test -timeout $(TIMEOUT)s $(ARGS) $(TESTPKGS)
+endif
+
+# similar to https://github.com/ahmetb/govvv
+GITCOMMITFULL  ?= $(shell git rev-parse HEAD)
+GITCOMMIT      ?= $(shell git rev-parse --short HEAD)
+GITBRANCH	   ?= $(shell git rev-parse --abbrev-ref HEAD)
+GITSTATE	   ?= $(shell git diff --quiet && echo 'clean' || echo 'dirty')
+GITSUMMARY     ?= $(shell git describe --tags --always --dirty --match=v*)
+BUILDDATE      ?= $(shell git log -1 --format=%ci | ts -f RFC3339)
+VERSION        ?= $(shell git describe --always --tags --match=v*)
+
+PROJECTNAME    := $(shell basename "$(PWD)")
+PROJDIR        := $(realpath $(PWD))
+
+version:         ## Shows the current version based on git
+	@$(call echo,GITCOMMITFULL : $(GITCOMMITFULL))
+	@$(call echo,GITCOMMIT     : $(GITCOMMIT))
+	@$(call echo,GITBRANCH     : $(GITBRANCH))
+	@$(call echo,GITSTATE      : $(GITSTATE))
+	@$(call echo,GITSUMMARY    : $(GITSUMMARY))
+	@$(call echo,BUILDDATE     : $(BUILDDATE))
+	@$(call echo,VERSION       : $(VERSION))
+
+# --------------------------------------------------------------------------------------------------------------------------------
+
+.PHONY: $(LNXCMDS) $(WINCMDS) $(WINGUIS) commands lnxcmds wincmds winguis
+.PHONY: $(SERVICES) services all
+.PHONY: dockers dockers_base dockers_extra builds package release targets
+.PHONY: dockerlogin
+
+dockerlogin:     ## Login to docker registry
+	@docker login -u $(DOCKER_REGISTRY_USERNAME) -p $(DOCKER_REGISTRY_PASSWORD) $(DOCKER_REGISTRY)
+
+DOCKERS        = $(addprefix docker_,$(SERVICES))
+DOCKERS_REL    = $(addprefix docker_rel_,$(SERVICES))
+DOCKERS_PUSH   = $(addprefix docker_push_,$(SERVICES))
+
+BUILDER := $(builder)
+
+ifeq ($(BUILDER),yes)
+$(LNXCMDS): test gofmt golint govet
+	$(call make_binary_with_docker_builder,$(@),$(@),linux,false,$(GOARCH),$(GOARM),$(CGO_ENABLED))
+else ifeq ($(BUILDER),true)
+$(LNXCMDS): test gofmt golint govet
+	$(call make_binary_with_docker_builder,$(@),$(@),linux,false,$(GOARCH),$(GOARM),$(CGO_ENABLED))
+else
+$(LNXCMDS): test gofmt golint govet
+	$(call make_compile_go_binary,$(@),$(@),linux,$(BUILD_FLAGS),$(GOARCH),$(GOARM),$(CGO_ENABLED))
+endif
+
+ifeq ($(BUILDER),yes)
+$(WINCMDS): test gofmt golint govet
+	$(call make_binary_with_docker_builder,$(@),$(@).exe,windows,false,$(GOARCH),$(GOARM),$(CGO_ENABLED))
+else ifeq ($(BUILDER),true)
+$(WINCMDS): test gofmt golint govet
+	$(call make_binary_with_docker_builder,$(@),$(@).exe,windows,false,$(GOARCH),$(GOARM),$(CGO_ENABLED))
+else
+$(WINCMDS): test gofmt golint govet
+	$(call make_compile_go_binary,$(@),$(@).exe,windows,$(BUILD_FLAGS),$(GOARCH),$(GOARM),$(CGO_ENABLED))
+endif
+
+ifeq ($(BUILDER),yes)
+$(WINGUIS): test gofmt golint govet
+	$(call make_binary_with_docker_builder,$(@),$(@).exe,windows,true,$(GOARCH),$(GOARM),$(CGO_ENABLED))
+else ifeq ($(BUILDER),true)
+$(WINGUIS): test gofmt golint govet
+	$(call make_binary_with_docker_builder,$(@),$(@).exe,windows,true,$(GOARCH),$(GOARM),$(CGO_ENABLED))
+else
+$(WINGUIS): test gofmt golint govet
+	$(call make_compile_go_binary,$(@),$(@).exe,windows,$(BUILD_FLAGS_WINDOWSGUI),$(GOARCH),$(GOARM),$(CGO_ENABLED))
+endif
+
+ifeq ($(BUILDER),yes)
+$(SERVICES): test gofmt golint govet
+	$(call make_binary_with_docker_builder,$(@),$(@),linux,false,$(GOARCH),$(GOARM),$(CGO_ENABLED))
+else ifeq ($(BUILDER),true)
+$(SERVICES): test gofmt golint govet
+	$(call make_binary_with_docker_builder,$(@),$(@),linux,false,$(GOARCH),$(GOARM),$(CGO_ENABLED))
+else
+$(SERVICES): test gofmt golint govet
+	$(call make_compile_go_binary,$(@),$(@),linux,$(BUILD_FLAGS),$(GOARCH),$(GOARM),$(CGO_ENABLED))
+endif
+
+ifeq ($(BUILDER),yes)
+$(DOCKERS): test gofmt golint govet
+	$(call make_docker_with_docker_builder,$(@),linux,false,$(GOARCH),$(GOARM),$(CGO_ENABLED))
+else ifeq ($(BUILDER),true)
+$(DOCKERS): test gofmt golint govet
+	$(call make_docker_with_docker_builder,$(@),linux,false,$(GOARCH),$(GOARM),$(CGO_ENABLED))
+else
+$(DOCKERS): test gofmt golint govet
+	$(call make_docker_using_binary_builds,$(@))
+endif
+
+COMMANDS = $(LNXCMDS) $(WINCMDS) $(WINGUIS)
+
+commands: $(COMMANDS)
+lnxcmds:  $(LNXCMDS)
+wincmds:  $(WINCMDS)
+winguis:  $(WINGUIS)
+services: $(SERVICES)
+all:      $(COMMANDS) $(SERVICES) $(DOCKERS)
+
+$(DOCKERS_REL): test gofmt golint govet
+	$(call make_docker_release_with_docker_builder,$(@),linux,false,$(GOARCH),$(GOARM),$(CGO_ENABLED))
+
+$(DOCKERS_PUSH):
+	$(call make_docker_push,$(@))
+
+dockers:      $(DOCKERS)
+dockers_rel:  $(DOCKERS_REL)
+dockers_push: $(DOCKERS_PUSH)
+
+DOCKERS_EXTRA = $(addprefix docker_,$(EXTRA_DOCKER_IMAGES))
+dockers_extra: $(DOCKERS_EXTRA)
+
+BUILD_LNXCMDS = $(addprefix build_,$(LNXCMDS))
+BUILD_WINCMDS = $(addprefix build_,$(WINCMDS))
+BUILD_WINGUIS = $(addprefix build_,$(WINGUIS))
+
+builds: $(BUILD_LNXCMDS) $(BUILD_WINCMDS) $(BUILD_WINGUIS)
+
+$(BUILD_LNXCMDS): test gofmt golint govet
+	@$(eval bin=$(subst build_,,$(@)))
+	$(call make_release_binary_with_docker_builder,$(bin),$(bin),linux,false,$(GOARCH),$(GOARM),$(CGO_ENABLED))
+
+$(BUILD_WINCMDS): test gofmt golint govet
+	@$(eval bin=$(subst build_,,$(@)))
+	$(call make_release_binary_with_docker_builder,$(bin),$(bin).exe,windows,false,$(GOARCH),$(GOARM),$(CGO_ENABLED))
+
+$(BUILD_WINGUIS): test gofmt golint govet
+	@$(eval bin=$(subst build_,,$(@)))
+	$(call make_release_binary_with_docker_builder,$(bin),$(bin).exe,windows,true,$(GOARCH),$(GOARM),$(CGO_ENABLED))
+
+ifeq ($(RELEASE_COMMANDS)$(RELEASE_INCLUDE),)
+package:
+	$(call verify_tag_version)
+	@echo "No files to release found."
+else
+package:
+	$(call verify_tag_version)
+	$(call make_package,$(TAG),$(RELEASE_COMMANDS),$(RELEASE_INCLUDE))
+endif
+
+release: builds dockers_rel dockers_push package
+	@echo Version: $(TAG) released.
+
+dockers_base:    ## Build base docker images, allways using --no-cache
+	$(call make_dockers_base)
+
+fixdockernet:    ## Fix docker network/dns failures during build. WARNING: it restarts the network manager with sudo
+	sudo systemctl restart NetworkManager.service && sudo systemctl restart docker
+
+# --------------------------------------------------------------------------------------------------------------------------------
+
+CGO_ENABLED    ?= 0
+GOOS           ?= linux
+GOARCH         ?= amd64
+BUILD_FLAGS            ?= -ldflags '-s -w -X "main.GitCommitFull=$(GITCOMMITFULL)" -X "main.GitBranch=$(GITBRANCH)" -X "main.GitState=$(GITSTATE)" -X "main.GitSummary=$(GITSUMMARY)" -X "main.Version=$(VERSION)" -X "main.BuildDate=$(BUILDDATE)" -X "main.GitCommit=$(GITCOMMIT)" -X "main.GoVersion=$(GOVERSION)" -X "$(GOMODULE)/pkg/version.GitCommitFull=$(GITCOMMITFULL)" -X "$(GOMODULE)/pkg/version.GitBranch=$(GITBRANCH)" -X "$(GOMODULE)/pkg/version.GitState=$(GITSTATE)" -X "$(GOMODULE)/pkg/version.GitSummary=$(GITSUMMARY)" -X "$(GOMODULE)/pkg/version.Version=$(VERSION)" -X "$(GOMODULE)/pkg/version.BuildDate=$(BUILDDATE)" -X "$(GOMODULE)/pkg/version.GitCommit=$(GITCOMMIT)" -X "$(GOMODULE)/pkg/version.GoVersion=$(GOVERSION)"'
+BUILD_FLAGS_WINDOWSGUI ?= -ldflags '-H=windowsgui -s -w -X "main.GitCommitFull=$(GITCOMMITFULL)" -X "main.GitBranch=$(GITBRANCH)" -X "main.GitState=$(GITSTATE)" -X "main.GitSummary=$(GITSUMMARY)" -X "main.Version=$(VERSION)" -X "main.BuildDate=$(BUILDDATE)" -X "main.GitCommit=$(GITCOMMIT)" -X "main.GoVersion=$(GOVERSION)" -X "$(GOMODULE)/pkg/version.GitCommitFull=$(GITCOMMITFULL)" -X "$(GOMODULE)/pkg/version.GitBranch=$(GITBRANCH)" -X "$(GOMODULE)/pkg/version.GitState=$(GITSTATE)" -X "$(GOMODULE)/pkg/version.GitSummary=$(GITSUMMARY)" -X "$(GOMODULE)/pkg/version.Version=$(VERSION)" -X "$(GOMODULE)/pkg/version.BuildDate=$(BUILDDATE)" -X "$(GOMODULE)/pkg/version.GitCommit=$(GITCOMMIT)" -X "$(GOMODULE)/pkg/version.GoVersion=$(GOVERSION)"'
+
+# -trimpath removes all file system paths from the compiled executable, to improve build reproducibility.
+# -mod=readonly tells the go command to ignore the vendor directory and to report an error if go.mod needs to be updated.
+define make_compile_go_binary
+	CGO_ENABLED=$(7) GOOS=$(3) GOARCH=$(5) GOARM=$(6) \
+	go build -trimpath -mod=readonly $(4) \
+	-o ${BUILD_DIR}/$(2) ./cmd/$(1)
+endef
+
+# gpg --verify v0.0.1.SHA256SUMS.gpg v0.0.1.SHA256SUMS && sha256sum -c v0.0.1.SHA256SUMS
+define make_package
+	@$(call mkdir,$(RELEASE_DIR))
+	@if [ -z "$(2)" ]; then \
+		tar cfz $(RELEASE_DIR)/$(1).tgz \
+			-C $(PWD) $(3) \
+			|| rm $(RELEASE_DIR)/$(1).tgz ; \
+	elif [ -z "$(3)" ]; then \
+		tar cfz $(RELEASE_DIR)/$(1).tgz \
+			-C $(RELEASE_DIR)/$(1) $(2) \
+			|| rm $(RELEASE_DIR)/$(1).tgz ; \
+	else \
+		tar cfz $(RELEASE_DIR)/$(1).tgz \
+			-C $(RELEASE_DIR)/$(1) $(2) \
+			-C $(PWD) $(3) \
+			|| rm $(RELEASE_DIR)/$(1).tgz ; \
+	fi
+	@if [ ! -s $(RELEASE_DIR)/$(1).tgz ]; then \
+		echo Release package creation failed; exit 1; \
+	else \
+		echo Release package created: $(RELEASE_DIR)/$(1).tgz; \
+		pushd $(CURDIR)/$(RELEASE_DIR) &>/dev/null; \
+		shasum -a 256 -b $(1).tgz > $(1).SHA256SUMS; \
+		if test -n "$(RELEASE_GPG_SIGNING_KEY)"; then \
+			gpg --default-key $(RELEASE_GPG_SIGNING_KEY) -a \
+				-o $(1).SHA256SUMS.gpg -b $(1).SHA256SUMS; \
+		fi; \
+		popd &>/dev/null; \
+	fi
+endef
+
+NOCACHE := 
+ifeq ($(nocache),yes)
+	NOCACHE := --no-cache
+else ifeq ($(nocache),true)
+    NOCACHE := --no-cache
+endif
+
+LATEST := no
+ifeq ($(latest),yes)
+	LATEST := yes
+else ifeq ($(latest),true)
+    LATEST := yes
+endif
+
+define make_release_binary_with_docker_builder
+	@$(call verify_tag_version)
+	@if [ "$(TAG)" != "$(VERSION)" ]; then \
+		echo TAG does not match git tag VERSION. TAG = $(TAG) git tag VERSION = $(VERSION); exit 1; \
+	fi
+	@$(call mkdir,$(RELEASE_DIR))
+	@$(call mkdir,$(RELEASE_DIR)/$(TAG))
+	@$(call mkdir,$(RELEASE_DIR)/$(TAG)/$(3)_$(5))
+	@$(call make_docker_build_with_builder,$(1),$(DOCKER_IMAGE_GROUP_NAME)/temp-build-$(1):$(TAG),$(NOCACHE),$(3),$(4),$(5),$(6),$(7))
+	docker container create --name $(DOCKER_IMAGE_GROUP_NAME)_temp_build_$(1) $(DOCKER_IMAGE_GROUP_NAME)/temp-build-$(1):$(TAG)
+	docker container cp $(DOCKER_IMAGE_GROUP_NAME)_temp_build_$(1):/app/exe ./$(RELEASE_DIR)/$(TAG)/$(3)_$(5)/$(2)
+	docker container rm $(DOCKER_IMAGE_GROUP_NAME)_temp_build_$(1)
+	docker rmi $(DOCKER_IMAGE_GROUP_NAME)/temp-build-$(1):$(TAG)
+endef
+
+define make_docker_release_with_docker_builder
+	@$(call verify_tag_version)
+	@if [ "$(TAG)" != "$(VERSION)" ]; then \
+		echo TAG does not match git tag VERSION. TAG = $(TAG) git tag VERSION = $(VERSION); exit 1; \
+	fi
+	@$(eval svc=$(subst docker_rel_,,$(1)))
+	@$(call make_docker_build_with_builder,$(svc),$(DOCKER_REGISTRY)/$(DOCKER_IMAGE_GROUP_NAME)/$(svc):$(TAG),$(NOCACHE),$(2),$(3),$(4),$(5),$(6))
+	@if [ "$(vRC)" != "yes" ]; then \
+		docker tag $(DOCKER_REGISTRY)/$(DOCKER_IMAGE_GROUP_NAME)/$(svc):$(TAG) $(DOCKER_REGISTRY)/$(DOCKER_IMAGE_GROUP_NAME)/$(svc):$(vSHORT); \
+	fi
+	@if [ "$(LATEST)" = "yes" ]; then \
+		docker tag $(DOCKER_REGISTRY)/$(DOCKER_IMAGE_GROUP_NAME)/$(svc):$(TAG) $(DOCKER_REGISTRY)/$(DOCKER_IMAGE_GROUP_NAME)/$(svc):latest; \
+	fi
+endef
+
+define make_docker_push
+	@$(call verify_tag)
+	@$(eval svc=$(subst docker_push_,,$(1)))
+	@if [ "$(vRC)" = "yes" ]; then \
+		echo -------------------------------------------------------------------------------; \
+		echo Refusing to automatically push release-candidate, you can do it manually; \
+		echo if you want: docker push $(DOCKER_REGISTRY)/$(DOCKER_IMAGE_GROUP_NAME)/$(svc):$(TAG); \
+		if [ "$(LATEST)" = "yes" ]; then \
+			echo and also do: docker push $(DOCKER_REGISTRY)/$(DOCKER_IMAGE_GROUP_NAME)/$(svc):latest; \
+		fi; \
+		echo -------------------------------------------------------------------------------; \
+	else \
+		docker push $(DOCKER_REGISTRY)/$(DOCKER_IMAGE_GROUP_NAME)/$(svc):$(TAG); \
+		docker push $(DOCKER_REGISTRY)/$(DOCKER_IMAGE_GROUP_NAME)/$(svc):$(vSHORT); \
+		if [ "$(LATEST)" = "yes" ]; then \
+			docker push $(DOCKER_REGISTRY)/$(DOCKER_IMAGE_GROUP_NAME)/$(svc):latest; \
+		fi \
+	fi
+endef
+
+define make_docker_with_docker_builder
+	@$(eval svc=$(subst docker_,,$(1)))
+	@$(call make_docker_build_with_builder,$(svc),$(DOCKER_IMAGE_GROUP_NAME)/$(svc),$(NOCACHE),$(2),$(3),$(4),$(5),$(6))
+endef
+
+define make_binary_with_docker_builder
+	@$(call mkdir,$(BUILD_DIR))
+	@$(call make_docker_build_with_builder,$(1),$(DOCKER_IMAGE_GROUP_NAME)/temp-$(1),$(NOCACHE),$(3),$(4),$(5),$(6),$(7))
+	docker container create --name $(DOCKER_IMAGE_GROUP_NAME)_temp_$(1) $(DOCKER_IMAGE_GROUP_NAME)/temp-$(1)
+	docker container cp $(DOCKER_IMAGE_GROUP_NAME)_temp_$(1):/app/exe ./$(BUILD_DIR)/$(2)
+	docker container rm $(DOCKER_IMAGE_GROUP_NAME)_temp_$(1)
+endef
+
+# parameters: svc,tag,nocache
+define make_docker_build_with_builder
+	@awk '{sub(/BASE_GOBUILD_IMAGE/,"$(DOCKER_BASE_GOBUILD_IMAGE_TAG)")}1' ./docker/Dockerfile.tpl.gobuild > ./docker/Dockerfile.gobuild || rm -f ./docker/Dockerfile.gobuild
+	@echo "$$(awk '{sub(/BASE_IMAGE/,"$(DOCKER_BASE_IMAGE_TAG)")}1' ./docker/Dockerfile.gobuild)" > ./docker/Dockerfile.gobuild || rm -f ./docker/Dockerfile.gobuild
+
+	docker build $(3) \
+		--build-arg DEPLOY_TOKEN_USERNAME=$(GO_MODULES_DEPLOY_TOKEN_USERNAME) \
+		--build-arg DEPLOY_TOKEN_PASSWORD=$(GO_MODULES_DEPLOY_TOKEN_PASSWORD) \
+		--build-arg GOMODULE=$(GOMODULE) \
+		--build-arg CGO_ENABLED=$(8) \
+		--build-arg GOOS=$(4) \
+		--build-arg GOARCH=$(6) \
+		--build-arg GOARM=$(7) \
+		--build-arg GITCOMMITFULL=$(GITCOMMITFULL) \
+		--build-arg GITBRANCH=$(GITBRANCH) \
+		--build-arg GITSTATE=$(GITSTATE) \
+		--build-arg GITSUMMARY=$(GITSUMMARY) \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg BUILDDATE=$(BUILDDATE) \
+		--build-arg GITCOMMIT=$(GITCOMMIT) \
+		--build-arg GOVERSION=$(GOVERSION) \
+		--build-arg WINGUI=$(5) \
+		--build-arg SVC=$(1) \
+		--tag=$(2) \
+		-f ./docker/Dockerfile.gobuild .
+endef
+
+define make_docker_using_binary_builds
+	@$(eval svc=$(subst docker_,,$(1)))
+	@awk '{sub(/BASE_IMAGE/,"$(DOCKER_BASE_IMAGE_TAG)")}1' ./docker/Dockerfile.tpl.dev > ./docker/Dockerfile.dev || rm -f ./docker/Dockerfile.dev
+
+	docker build $(NOCACHE) \
+		--build-arg SVC=$(svc) \
+		--tag=$(DOCKER_IMAGE_GROUP_NAME)/$(svc) \
+		-f ./docker/Dockerfile.dev ./$(BUILD_DIR)
+endef
+
+define make_dockers_base
+	@$(call mkdir,$(BUILD_DIR))
+	@cp -f ./docker/start.sh ./$(BUILD_DIR)/start.sh
+
+	docker build \
+		--no-cache \
+		--build-arg ALPINE_VERSION=$(ALPINE_VERSION) \
+		--build-arg SOPS_VERSION=$(SOPS_VERSION) \
+		--tag=$(DOCKER_BASE_IMAGE_TAG) \
+		-f ./docker/Dockerfile.base ./$(BUILD_DIR)
+
+	docker build \
+		--no-cache \
+		--build-arg GOBUILD_VERSION=$(GOBUILD_VERSION) \
+		--build-arg SOPS_VERSION=$(SOPS_VERSION) \
+		--tag=$(DOCKER_BASE_GOBUILD_IMAGE_TAG) \
+		- < ./docker/Dockerfile.basegobuild
+endef
+
+# --------------------------------------------------------------------------------------------------------------------------------
+
+.PHONY: keygenerategpg keyimportgpg keyfingerprint secrets secretdecrypt secretencrypt secretsdecrypt secretsencrypt sops
+
+keyimportgpg:    ## Import the GPG config key
+	@$(call mkdir,$(CONFIG_HOT_FOLDER)/$(CONFIG_GNUPG_FOLDER))
+	gpg --homedir=$(CONFIG_HOT_FOLDER)/$(CONFIG_GNUPG_FOLDER) --no-permission-warning --list-secret-keys
+	gpg --homedir=$(CONFIG_HOT_FOLDER)/$(CONFIG_GNUPG_FOLDER) --import $(CONFIG_HOT_FOLDER)/$(CONFIG_GPG_PRIVATE_KEY_FILE)
+
+--gpggenerate:
+	@if [ -s $(CONFIG_HOT_FOLDER)/$(CONFIG_SOPS_KEY_NAME)_private.key ]; then \
+		echo Warning private key already exists: $(CONFIG_HOT_FOLDER)/$(CONFIG_SOPS_KEY_NAME)_private.key; exit 1; \
+	fi
+	@$(call mkdir,$(CONFIG_HOT_FOLDER)/$(CONFIG_GNUPG_FOLDER))
+	@$(call gpg_generate_key_config,$(CONFIG_HOT_FOLDER)/$(CONFIG_GNUPG_GENERATE_FILE),$(CONFIG_SOPS_KEY_NAME))
+	gpg --homedir=$(CONFIG_HOT_FOLDER)/$(CONFIG_GNUPG_FOLDER) --no-permission-warning --batch --generate-key $(CONFIG_HOT_FOLDER)/$(CONFIG_GNUPG_GENERATE_FILE)
+	gpg --homedir=$(CONFIG_HOT_FOLDER)/$(CONFIG_GNUPG_FOLDER) --no-permission-warning --list-secret-keys
+	gpg --homedir=$(CONFIG_HOT_FOLDER)/$(CONFIG_GNUPG_FOLDER) -a --no-permission-warning --export "$(CONFIG_SOPS_KEY_NAME)" > $(CONFIG_HOT_FOLDER)/$(CONFIG_SOPS_KEY_NAME)_public.key
+	gpg --homedir=$(CONFIG_HOT_FOLDER)/$(CONFIG_GNUPG_FOLDER) -a --no-permission-warning --export-secret-key "$(CONFIG_SOPS_KEY_NAME)" > $(CONFIG_HOT_FOLDER)/$(CONFIG_SOPS_KEY_NAME)_private.key
+	gpg --homedir=$(CONFIG_HOT_FOLDER)/$(CONFIG_GNUPG_FOLDER) --no-permission-warning --list-packets $(CONFIG_HOT_FOLDER)/$(CONFIG_SOPS_KEY_NAME)_public.key | awk '/keyid:/{ print $$2 }'
+
+define gpgfingerprint
+	$(shell gpg --homedir=$(1) --no-permission-warning --keyid-format LONG -k $(2) | sed -n '2 p' | xargs)
+endef
+
+keyfingerprint:  ## Show the GPG config key fingerprint
+	$(eval fingerprint=$(call gpgfingerprint,$(CONFIG_HOT_FOLDER)/$(CONFIG_GNUPG_FOLDER),$(CONFIG_SOPS_KEY_NAME)))
+	@echo $(fingerprint)
+
+# keygenerategpg:  ## Generate the GPG config key
+# if gpg fails after deleting gnupg folder, restart agent: killall gpg-agent
+keygenerategpg: --gpggenerate
+	$(eval fingerprint=$(call gpgfingerprint,$(CONFIG_HOT_FOLDER)/$(CONFIG_GNUPG_FOLDER),$(CONFIG_SOPS_KEY_NAME)))
+	@echo $(fingerprint)
+	@sed -i 's/pgp: "[^"]*"/pgp: "$(fingerprint)"/g' ./.sops.yml
+
+SECRETS = $(shell \
+	find ./config/secrets/ -name "*.secrets.yml" | \
+	xargs -I {} basename {}  | \
+	uniq)
+
+secrets:         ## List the secrets files
+	@for i in $(SECRETS); do \
+		$(call echo,$$i); \
+	done
+
+# secretsdecrypt:  ## Decrypt all the secrets files in-place with sops
+secretsdecrypt: --checkgitprecommit
+	@for i in $(SECRETS); do \
+		$(call make_secret_decrypt,./config/secrets/$$i); \
+	done
+
+# secretsencrypt:  ## Encrypt all the secrets files in-place with sops
+secretsencrypt: --checkgitprecommit
+	@for i in $(SECRETS); do \
+		$(call make_secret_encrypt,./config/secrets/$$i); \
+	done
+
+define make_secret_decrypt
+	GNUPGHOME=$(CONFIG_HOT_FOLDER)/$(CONFIG_GNUPG_FOLDER) \
+		$(PWD)/bin/sops --config ./.sops.yml --decrypt --in-place $(1)
+endef
+
+ifdef CONFIG_SECRET_REGEX
+define make_secret_encrypt
+	GNUPGHOME=$(CONFIG_HOT_FOLDER)/$(CONFIG_GNUPG_FOLDER) \
+		$(PWD)/bin/sops --config ./.sops.yml --encrypt --in-place --encrypted-regex '$(CONFIG_SECRET_REGEX)' $(1)
+endef
+else
+define make_secret_encrypt
+	GNUPGHOME=$(CONFIG_HOT_FOLDER)/$(CONFIG_GNUPG_FOLDER) \
+		$(PWD)/bin/sops --config ./.sops.yml --encrypt --in-place $(1)
+endef
+endif
+
+# secretdecrypt:   ## Decrypt secrets in-place with sops, make secretencrypt file=./config.prod.secrets.yml
+secretdecrypt: --checkgitprecommit
+	@if [ -z $(file) ]; then \
+		echo File not defined. For example: make secretdecrypt file=./config/secrets/server.prod.secrets.yml; exit 1;\
+	fi
+	$(call make_secret_decrypt,$(file))
+
+# secretencrypt:   ## Encrypt secrets in-place with sops, make secretencrypt file=./config.prod.secrets.yml
+secretencrypt: --checkgitprecommit
+	@if [ -z $(file) ]; then \
+		echo File not defined. For example: make secretencrypt file=./config/secrets/server.prod.secrets.yml; exit 1;\
+	fi
+	$(call make_secret_encrypt,$(file))
+
+# parameters file,name
+define gpg_generate_key_config
+	@echo %no-protection > $(1)
+	@echo Key-Type: default >> $(1)
+	@echo Key-Length: 4096 >> $(1)
+	@echo Subkey-Type: default >> $(1)
+	@echo Subkey-Length: 4096 >> $(1)
+	@echo Name-Real: $(2) >> $(1)
+	@echo Expire-Date: 0 >> $(1)
+	@echo # Do a commit here, so that we can later print "done" :-) >> $(1)
+	@echo %commit >> $(1)
+	@echo %echo done >> $(1)
+endef
+
+sops:            ## Install sops
+	@$(call mkdir,$(PWD)/bin)
+	wget -O $(PWD)/bin/sops https://github.com/mozilla/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux
+	chmod +x $(PWD)/bin/sops
+
+# --------------------------------------------------------------------------------------------------------------------------------
+
+ifeq ($(shell echo "check_quotes"),"check_quotes")
+	WINDOWS := yes
+else
+	WINDOWS := no
+endif
+
+ifeq ($(WINDOWS),yes) # ver si $(shell) se requiere en windows, con o sin MinGW
+	mkdir = $(shell mkdir $(subst /,\,$(1)) > nul 2>&1 || (exit 0))
+	rm = $(shell $(wordlist 2,65535,$(foreach FILE,$(subst /,\,$(1)),& del $(FILE) > nul 2>&1)) || (exit 0))
+	rmdir = $(shell rmdir $(subst /,\,$(1)) > nul 2>&1 || (exit 0))
+	echo = $(shell echo $(1))
+else
+	mkdir = mkdir -p $(1)
+	rm = rm $(1) > /dev/null 2>&1 || true
+	rmdir = rmdir $(1) > /dev/null 2>&1 || true
+	echo = echo "$(1)"
+endif
+
+fire:
+	@echo "                     "
+	@echo " (     (    (        " 
+	@echo " )\ )  )\ ) )\ )     " 
+	@echo "(()/( (()/((()/( (   " 
+	@echo " /(_)) /(_))/(_)))\  " 
+	@echo "(_))_|(_)) (_)) ((_) " 
+	@echo "==================== "
