@@ -19,11 +19,7 @@ SHELL:=/bin/bash
 .PHONY: fileinfo genmodels test version copyright chownqueries gitprecommit
 
 gitprecommit:    ## Install .git/hooks/pre-commit script
-	@if [ -e .git/hooks/pre-commit ] ; then \
-		echo "There is file .git/hooks/pre-commit already installed"; false; \
-	fi;
-	wget https://gist.githubusercontent.com/diegosz/d970596a9dab4e63cbc3024296b87443/raw/70cdc78475345d3d341ae48d160d2f61ee1f4a5e/pre-commit -P .git/hooks/
-	chmod +x .git/hooks/pre-commit
+	@pre-commit install
 
 --checkgitprecommit:
 	@if [ ! -s .git/hooks/pre-commit ]; then \
@@ -73,13 +69,13 @@ cleanall: clean cleanvolumes cleanimages cleantemps cleanbases
 showimages:      ## Show project docker images
 	@docker images | grep $(DOCKER_IMAGE_GROUP_NAME) || echo No \"$(DOCKER_IMAGE_GROUP_NAME)\" images found.
 
-# tools:           ## Download and install go tools defined in tools.go
+# tools:           ## Download and install go tools defined in tools
 tools: --checkgitprecommit
 	@echo Installing tools from tools/tools.go
-	@cat tools/tools.go | grep _ | awk -F'"' '{print $$2}' | xargs -tI % go install %
+	@cat tools/tools.go | grep _ | awk -F'"' '{print $$2}' | xargs -tI % sh -c 'cd $$HOME; go install %@latest'
 	@for p in  $(TOOLS_ADDITIONAL_GO_GET); \
-    do \
-    	go get -u $$p ; \
+	do \
+		go get -u $$p ; \
 	done
 
 targets:         ## Shows the available targets
@@ -95,7 +91,7 @@ targets:         ## Shows the available targets
 	@echo "dockers_push:     Pushes the docker images builded using dockers_rel with the defined tag"
 	@echo "builds:           Builds all the defined commands with the defined tag into the release folder using a docker go builder"
 	@echo "package:          Creates a release package with the defined tag into the package folder"
-	@echo "release:          Release runs builds, dockers_rel, push and pacakge with the defined tag"
+	@echo "release:          Release runs builds, dockers_rel, push and package with the defined tag"
 	@echo "lnxcmd set:       $(LNXCMDS)"
 	@echo "wincmd set:       $(WINCMDS)"
 	@echo "wingui set:       $(WINGUIS)"
@@ -228,9 +224,9 @@ godistlist:      ## List the supported go distributions and architectures
 # If the first argument is "fileinfo"...
 ifeq (fileinfo,$(firstword $(MAKECMDGOALS)))
 	# use the rest as arguments
-	FILEINFO_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
-	# ...and turn them into do-nothing targets
-	$(eval $(FILEINFO_ARGS):;@:)
+  	FILEINFO_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+  	# ...and turn them into do-nothing targets
+  	$(eval $(FILEINFO_ARGS):;@:)
 endif
 
 fileinfo:        ## Show file information, including distribution and architecture in case of executables
