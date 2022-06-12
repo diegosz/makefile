@@ -232,9 +232,6 @@ endif
 fileinfo:        ## Show file information, including distribution and architecture in case of executables
 	@file $(FILEINFO_ARGS)
 
-copyright:       ## Add or update copyright recursively in the project
-	@go run tools/update-license/main.go -skip config $(PWD)
-
 genmodels:       ## Generate sqlboiler DB models
 	@find . -type f -name '*.toml' -path "./sqlboiler/*" -exec sqlboiler psql --config {} ';'
 	@find ./models/ -name "*.go" -not -name "boil_*" -type f | xargs -r sed -i -e '/strconv/d'
