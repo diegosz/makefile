@@ -596,21 +596,27 @@ endef
 
 define make_dockers_base
 	@$(call mkdir,$(BUILD_DIR))
-	@cp -f ./docker/start.sh ./$(BUILD_DIR)/start.sh
+	@if [ -e ./docker/start.sh ]; then \
+		cp -f ./docker/start.sh ./$(BUILD_DIR)/start.sh;\
+	fi
 
-	docker build \
-		--no-cache \
-		--build-arg ALPINE_VERSION=$(ALPINE_VERSION) \
-		--build-arg SOPS_VERSION=$(SOPS_VERSION) \
-		--tag=$(DOCKER_BASE_IMAGE_TAG) \
-		-f ./docker/Dockerfile.base ./$(BUILD_DIR)
+	@if [ -e ./docker/Dockerfile.base ]; then \
+		docker build \
+			--no-cache \
+			--build-arg ALPINE_VERSION=$(ALPINE_VERSION) \
+			--build-arg SOPS_VERSION=$(SOPS_VERSION) \
+			--tag=$(DOCKER_BASE_IMAGE_TAG) \
+			-f ./docker/Dockerfile.base ./$(BUILD_DIR);\
+	fi
 
-	docker build \
-		--no-cache \
-		--build-arg GOBUILD_VERSION=$(GOBUILD_VERSION) \
-		--build-arg SOPS_VERSION=$(SOPS_VERSION) \
-		--tag=$(DOCKER_BASE_GOBUILD_IMAGE_TAG) \
-		- < ./docker/Dockerfile.basegobuild
+	@if [ -e ./docker/Dockerfile.basegobuild ]; then \
+		docker build \
+			--no-cache \
+			--build-arg GOBUILD_VERSION=$(GOBUILD_VERSION) \
+			--build-arg SOPS_VERSION=$(SOPS_VERSION) \
+			--tag=$(DOCKER_BASE_GOBUILD_IMAGE_TAG) \
+			- < ./docker/Dockerfile.basegobuild;\
+	fi
 endef
 
 # --------------------------------------------------------------------------------------------------------------------------------
