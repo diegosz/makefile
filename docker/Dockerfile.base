@@ -1,0 +1,22 @@
+ARG ALPINE_VERSION=3.16.0
+FROM alpine:${ALPINE_VERSION}
+
+# The --no-cache option in apk allows to not cache the index locally, which is
+# useful for keeping containers small. Literally it equals apk --update-cache in
+# the beginning and rm -rf /var/cache/apk/* in the end.
+RUN apk add --no-cache curl
+RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache gnupg
+RUN apk add --no-cache tzdata
+
+WORKDIR /app
+RUN mkdir -p /app/config
+
+ARG SOPS_VERSION=3.7.3
+ADD https://github.com/mozilla/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux /app/sops
+RUN chmod 755 /app/sops
+
+ADD ./start.sh /app/start.sh
+RUN chmod +x /app/start.sh
+
+ENTRYPOINT ["./start.sh"]

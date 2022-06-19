@@ -1,0 +1,12 @@
+# DO NOT EDIT!
+# Generated from .docker/Dockerfile.tpl.dev
+FROM BASE_IMAGE
+
+WORKDIR /app
+
+ARG SVC
+COPY ${SVC} /app/exe
+RUN chmod +x /app/exe
+
+ENTRYPOINT ["./start.sh"]
+CMD ["run"]

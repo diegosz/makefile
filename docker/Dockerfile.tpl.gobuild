@@ -1,0 +1,72 @@
+# DO NOT EDIT!
+# Generated from .docker/Dockerfile.tpl.gobuild
+FROM BASE_GOBUILD_IMAGE AS builder
+
+ARG DEPLOY_TOKEN_USERNAME="nothing"
+ARG DEPLOY_TOKEN_PASSWORD="nothing"
+
+# Create a netrc file using the credentials specified
+RUN printf "machine gitlab.com login ${DEPLOY_TOKEN_USERNAME} password ${DEPLOY_TOKEN_PASSWORD}\n" >> /root/.netrc
+RUN chmod 600 /root/.netrc
+
+ARG GOMODULE
+WORKDIR /go/src/${GOMODULE}
+
+# Force the go compiler to use modules
+ENV GO111MODULE=on
+
+# We want to populate the module cache based on the go.{mod,sum} files.
+COPY go.mod .
+COPY go.sum .
+
+# This is the ‘magic’ step that will download all the dependencies that are
+# specified in the go.mod and go.sum file. Because of how the layer caching
+# system works in Docker, the  go mod download command will _ only_ be re-run
+# when the go.mod or go.sum file change {or when we add another docker
+# instruction to this line}
+RUN go mod download
+
+# Here we copy the rest of the source code
+COPY . .
+
+ARG CGO_ENABLED
+ARG GOOS
+ARG GOARCH
+ARG GOARM
+
+ARG BUILD_TAGS
+ARG GITCOMMITFULL
+ARG GITBRANCH
+ARG GITSTATE
+ARG GITSUMMARY
+ARG VERSION
+ARG BUILDDATE
+ARG GITCOMMIT
+ARG GOVERSION
+ARG WINGUI
+
+ARG SVC
+
+# And compile the project
+# -trimpath removes all file system paths from the compiled executable, to improve build reproducibility.
+# -mod=readonly tells the go command to ignore the vendor directory and to report an error if go.mod needs to be updated.
+RUN if [ "${WINGUI}" = "true" ] ; then \
+    CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} GOARCH=${GOARCH} GOARM=${GOARM} \
+    go build -trimpath -mod=readonly -buildvcs=false -tags ${BUILD_TAGS} \
+    -ldflags "-H=windowsgui -s -w -X main.GitCommitFull=${GITCOMMITFULL} -X main.GitBranch=${GITBRANCH} -X main.GitState=${GITSTATE} -X main.GitSummary=${GITSUMMARY} -X main.Version=${VERSION} -X main.BuildDate=${BUILDDATE} -X main.GitCommit=${GITCOMMIT} -X main.GoVersion=${GOVERSION} -X ${GOMODULE}/pkg/version.GitCommitFull=${GITCOMMITFULL} -X ${GOMODULE}/pkg/version.GitBranch=${GITBRANCH} -X ${GOMODULE}/pkg/version.GitState=${GITSTATE} -X ${GOMODULE}/pkg/version.GitSummary=${GITSUMMARY} -X ${GOMODULE}/pkg/version.Version=${VERSION} -X ${GOMODULE}/pkg/version.BuildDate=${BUILDDATE} -X ${GOMODULE}/pkg/version.GitCommit=${GITCOMMIT} -X ${GOMODULE}/pkg/version.GoVersion=${GOVERSION} -X go.goexogo.com/elib/eversion.GitCommitFull=${GITCOMMITFULL} -X go.goexogo.com/elib/eversion.GitBranch=${GITBRANCH} -X go.goexogo.com/elib/eversion.GitState=${GITSTATE} -X go.goexogo.com/elib/eversion.GitSummary=${GITSUMMARY} -X go.goexogo.com/elib/eversion.Version=${VERSION} -X go.goexogo.com/elib/eversion.BuildDate=${BUILDDATE} -X go.goexogo.com/elib/eversion.GitCommit=${GITCOMMIT} -X go.goexogo.com/elib/eversion.GoVersion=${GOVERSION}" \
+    -o /exe ./cmd/${SVC} ; \
+    else \
+    CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} GOARCH=${GOARCH} GOARM=${GOARM} \
+    go build -trimpath -mod=readonly -buildvcs=false -tags ${BUILD_TAGS} \
+    -ldflags "-s -w -X main.GitCommitFull=${GITCOMMITFULL} -X main.GitBranch=${GITBRANCH} -X main.GitState=${GITSTATE} -X main.GitSummary=${GITSUMMARY} -X main.Version=${VERSION} -X main.BuildDate=${BUILDDATE} -X main.GitCommit=${GITCOMMIT} -X main.GoVersion=${GOVERSION} -X ${GOMODULE}/pkg/version.GitCommitFull=${GITCOMMITFULL} -X ${GOMODULE}/pkg/version.GitBranch=${GITBRANCH} -X ${GOMODULE}/pkg/version.GitState=${GITSTATE} -X ${GOMODULE}/pkg/version.GitSummary=${GITSUMMARY} -X ${GOMODULE}/pkg/version.Version=${VERSION} -X ${GOMODULE}/pkg/version.BuildDate=${BUILDDATE} -X ${GOMODULE}/pkg/version.GitCommit=${GITCOMMIT} -X ${GOMODULE}/pkg/version.GoVersion=${GOVERSION} -X go.goexogo.com/elib/eversion.GitCommitFull=${GITCOMMITFULL} -X go.goexogo.com/elib/eversion.GitBranch=${GITBRANCH} -X go.goexogo.com/elib/eversion.GitState=${GITSTATE} -X go.goexogo.com/elib/eversion.GitSummary=${GITSUMMARY} -X go.goexogo.com/elib/eversion.Version=${VERSION} -X go.goexogo.com/elib/eversion.BuildDate=${BUILDDATE} -X go.goexogo.com/elib/eversion.GitCommit=${GITCOMMIT} -X go.goexogo.com/elib/eversion.GoVersion=${GOVERSION}" \
+    -o /exe ./cmd/${SVC} ; fi
+# I was not able to figure out how to pass the ldflags in a single ARG variable...
+
+#In this last stage, we start from a fresh base image, to reduce the image size and not ship the Go compiler in our production artifacts.
+FROM BASE_IMAGE
+
+COPY --from=builder /exe /app/exe
+RUN chmod +x /app/exe
+
+ENTRYPOINT ["./start.sh"]
+CMD ["run"]

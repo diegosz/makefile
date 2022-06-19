@@ -1,0 +1,21 @@
+ARG GOBUILD_VERSION=1.18.3-alpine3.16
+FROM golang:${GOBUILD_VERSION}
+
+# The --no-cache option in apk allows to not cache the index locally, which is
+# useful for keeping containers small. Literally it equals apk --update-cache in
+# the beginning and rm -rf /var/cache/apk/* in the end.
+RUN apk add --no-cache bash
+RUN apk add --no-cache git
+RUN apk add --no-cache gcc
+RUN apk add --no-cache g++
+RUN apk add --no-cache libc-dev
+RUN apk add --no-cache curl
+RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache gnupg
+RUN apk add --no-cache tzdata
+
+RUN mkdir -p /app
+
+ARG SOPS_VERSION=3.7.3
+ADD https://github.com/mozilla/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux /app/sops
+RUN chmod 755 /app/sops
