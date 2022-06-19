@@ -15,7 +15,7 @@ SHELL:=/bin/bash
 
 .PHONY: clean cleanall cleanbases cleantemps cleanimages cleanvolumes showimages
 .PHONY: tools tagdebug changelog bump gogen gofmt golint govet goshow godistlist
-.PHONY: gomodlistupds gomodupdateall goexogotoken goexogolist goexogoupdate
+.PHONY: gomodlistupds gomodupdateall goexogotoken goexogolist goexogoupdate gobuildinfo
 .PHONY: fileinfo genmodels test version copyright chownqueries gitprecommit
 
 gitprecommit:    ## Install .git/hooks/pre-commit script
@@ -229,6 +229,17 @@ goexogoupdate:   ## Get available minor and patch dependency updates
 
 godistlist:      ## List the supported go distributions and architectures
 	@go tool dist list | column -c 75 | column -t
+
+# If the first argument is "gobuildinfo"...
+ifeq (gobuildinfo,$(firstword $(MAKECMDGOALS)))
+    # use the rest as arguments
+    GOBUILDINFO_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+    # ...and turn them into do-nothing targets
+    $(eval $(GOBUILDINFO_ARGS):;@:)
+endif
+
+gobuildinfo:     ## Show go exe build information, including build tags
+	@go version -m $(GOBUILDINFO_ARGS)
 
 # If the first argument is "fileinfo"...
 ifeq (fileinfo,$(firstword $(MAKECMDGOALS)))
