@@ -134,8 +134,8 @@ vRC    := $(shell [[ $(vFULL) =~ \-(rc|RC|Rc)(.[0-9a-zA-Z]+)?$$ ]] && echo "yes"
 # If not valid but round then add .0 suffix and revalidate
 ifeq ($(vVALID),)
 ifeq ($(vROUND),yes)
-	vFULL := $(addsuffix .0,$(vFULL))
-	vVALID := $(shell [[ $(vFULL) =~ ^v[0-9]+\.[0-9]+\.[0-9]+((-[0-9a-zA-Z]+)?$$|(-[0-9a-zA-Z]+\.[0-9a-zA-Z]+)?$$)$$ ]] && echo "yes")
+   vFULL := $(addsuffix .0,$(vFULL))
+   vVALID := $(shell [[ $(vFULL) =~ ^v[0-9]+\.[0-9]+\.[0-9]+((-[0-9a-zA-Z]+)?$$|(-[0-9a-zA-Z]+\.[0-9a-zA-Z]+)?$$)$$ ]] && echo "yes")
 endif
 endif
 
@@ -143,7 +143,7 @@ endif
 vSHORT := $(word 1,$(subst ., ,$(vFULL))).$(word 2,$(subst ., ,$(vFULL)))
 
 ifeq ($(vVALID),yes)
-	TAG := $(vFULL)
+   TAG := $(vFULL)
 endif
 
 tagdebug:        ## Show the tag validation, run as: make tagdebug tag=v0.0.1
@@ -243,10 +243,10 @@ gobuildinfo:     ## Show go exe build information, including build tags
 
 # If the first argument is "fileinfo"...
 ifeq (fileinfo,$(firstword $(MAKECMDGOALS)))
-	# use the rest as arguments
-  	FILEINFO_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
-  	# ...and turn them into do-nothing targets
-  	$(eval $(FILEINFO_ARGS):;@:)
+    # use the rest as arguments
+    FILEINFO_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+    # ...and turn them into do-nothing targets
+    $(eval $(FILEINFO_ARGS):;@:)
 endif
 
 fileinfo:        ## Show file information, including distribution and architecture in case of executables
@@ -502,16 +502,16 @@ endef
 
 NOCACHE := 
 ifeq ($(nocache),yes)
-	NOCACHE := --no-cache
+   NOCACHE := --no-cache
 else ifeq ($(nocache),true)
-    NOCACHE := --no-cache
+   NOCACHE := --no-cache
 endif
 
 LATEST := no
 ifeq ($(latest),yes)
-	LATEST := yes
+   LATEST := yes
 else ifeq ($(latest),true)
-    LATEST := yes
+   LATEST := yes
 endif
 
 define make_release_binary_with_docker_builder
@@ -750,21 +750,21 @@ sops:            ## Install sops
 # --------------------------------------------------------------------------------------------------------------------------------
 
 ifeq ($(shell echo "check_quotes"),"check_quotes")
-	WINDOWS := yes
+   WINDOWS := yes
 else
-	WINDOWS := no
+   WINDOWS := no
 endif
 
 ifeq ($(WINDOWS),yes) # ver si $(shell) se requiere en windows, con o sin MinGW
-	mkdir = $(shell mkdir $(subst /,\,$(1)) > nul 2>&1 || (exit 0))
-	rm = $(shell $(wordlist 2,65535,$(foreach FILE,$(subst /,\,$(1)),& del $(FILE) > nul 2>&1)) || (exit 0))
-	rmdir = $(shell rmdir $(subst /,\,$(1)) > nul 2>&1 || (exit 0))
-	echo = $(shell echo $(1))
+   mkdir = $(shell mkdir $(subst /,\,$(1)) > nul 2>&1 || (exit 0))
+   rm = $(shell $(wordlist 2,65535,$(foreach FILE,$(subst /,\,$(1)),& del $(FILE) > nul 2>&1)) || (exit 0))
+   rmdir = $(shell rmdir $(subst /,\,$(1)) > nul 2>&1 || (exit 0))
+   echo = $(shell echo $(1))
 else
-	mkdir = mkdir -p $(1)
-	rm = rm $(1) > /dev/null 2>&1 || true
-	rmdir = rmdir $(1) > /dev/null 2>&1 || true
-	echo = echo "$(1)"
+   mkdir = mkdir -p $(1)
+   rm = rm $(1) > /dev/null 2>&1 || true
+   rmdir = rmdir $(1) > /dev/null 2>&1 || true
+   echo = echo "$(1)"
 endif
 
 fire:
