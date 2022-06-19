@@ -455,9 +455,22 @@ fixdockernet:    ## Fix docker network/dns failures during build. WARNING: it re
 
 # --------------------------------------------------------------------------------------------------------------------------------
 
-CGO_ENABLED    ?= 0
-GOOS           ?= linux
-GOARCH         ?= amd64
+# buildtags could be used to define an optional comma-separated list of build tags to consider satisfied during the build
+# for example make builds buildtags="trace,pprof"
+BUILD_TAGS := $(buildtags)
+ifndef BUILD_TAGS
+	BUILD_TAGS = '""'
+endif
+
+# buildvalues could be used to define aditional compile time string values of the form importpath.name=value
+# for example make builds buildvalues='-X \"main._TRACE=true\" -X \"communities/internal/visitrecs._PPROF=true\"'
+# BUILD_VALUES = $(buildvalues) -X "main.GitCommitFull=$(GITCOMMITFULL)" -X "main.GitBranch=$(GITBRANCH)" -X "main.GitState=$(GITSTATE)" -X "main.GitSummary=$(GITSUMMARY)" -X "main.Version=$(VERSION)" -X "main.BuildDate=$(BUILDDATE)" -X "main.GitCommit=$(GITCOMMIT)" -X "main.GoVersion=$(GOVERSION)" -X "$(GOMODULE)/pkg/version.GitCommitFull=$(GITCOMMITFULL)" -X "$(GOMODULE)/pkg/version.GitBranch=$(GITBRANCH)" -X "$(GOMODULE)/pkg/version.GitState=$(GITSTATE)" -X "$(GOMODULE)/pkg/version.GitSummary=$(GITSUMMARY)" -X "$(GOMODULE)/pkg/version.Version=$(VERSION)" -X "$(GOMODULE)/pkg/version.BuildDate=$(BUILDDATE)" -X "$(GOMODULE)/pkg/version.GitCommit=$(GITCOMMIT)" -X "$(GOMODULE)/pkg/version.GoVersion=$(GOVERSION)" -X "go.goexogo.com/elib/eversion.GitCommitFull=$(GITCOMMITFULL)" -X "go.goexogo.com/elib/eversion.GitBranch=$(GITBRANCH)" -X "go.goexogo.com/elib/eversion.GitState=$(GITSTATE)" -X "go.goexogo.com/elib/eversion.GitSummary=$(GITSUMMARY)" -X "go.goexogo.com/elib/eversion.Version=$(VERSION)" -X "go.goexogo.com/elib/eversion.BuildDate=$(BUILDDATE)" -X "go.goexogo.com/elib/eversion.GitCommit=$(GITCOMMIT)" -X "go.goexogo.com/elib/eversion.GoVersion=$(GOVERSION)"
+# using $(BUILD_VALUES) works fine for local builds, but not for docker builds, Was not able to figure out how to pass the ldflags in a single ARG variable...
+# instead use buildtags to embbed any value
+
+CGO_ENABLED            ?= 0
+GOOS                   ?= linux
+GOARCH                 ?= amd64
 BUILD_FLAGS            ?= -ldflags '-s -w -X "main.GitCommitFull=$(GITCOMMITFULL)" -X "main.GitBranch=$(GITBRANCH)" -X "main.GitState=$(GITSTATE)" -X "main.GitSummary=$(GITSUMMARY)" -X "main.Version=$(VERSION)" -X "main.BuildDate=$(BUILDDATE)" -X "main.GitCommit=$(GITCOMMIT)" -X "main.GoVersion=$(GOVERSION)" -X "$(GOMODULE)/pkg/version.GitCommitFull=$(GITCOMMITFULL)" -X "$(GOMODULE)/pkg/version.GitBranch=$(GITBRANCH)" -X "$(GOMODULE)/pkg/version.GitState=$(GITSTATE)" -X "$(GOMODULE)/pkg/version.GitSummary=$(GITSUMMARY)" -X "$(GOMODULE)/pkg/version.Version=$(VERSION)" -X "$(GOMODULE)/pkg/version.BuildDate=$(BUILDDATE)" -X "$(GOMODULE)/pkg/version.GitCommit=$(GITCOMMIT)" -X "$(GOMODULE)/pkg/version.GoVersion=$(GOVERSION)" -X "go.goexogo.com/elib/eversion.GitCommitFull=$(GITCOMMITFULL)" -X "go.goexogo.com/elib/eversion.GitBranch=$(GITBRANCH)" -X "go.goexogo.com/elib/eversion.GitState=$(GITSTATE)" -X "go.goexogo.com/elib/eversion.GitSummary=$(GITSUMMARY)" -X "go.goexogo.com/elib/eversion.Version=$(VERSION)" -X "go.goexogo.com/elib/eversion.BuildDate=$(BUILDDATE)" -X "go.goexogo.com/elib/eversion.GitCommit=$(GITCOMMIT)" -X "go.goexogo.com/elib/eversion.GoVersion=$(GOVERSION)"'
 BUILD_FLAGS_WINDOWSGUI ?= -ldflags '-H=windowsgui -s -w -X "main.GitCommitFull=$(GITCOMMITFULL)" -X "main.GitBranch=$(GITBRANCH)" -X "main.GitState=$(GITSTATE)" -X "main.GitSummary=$(GITSUMMARY)" -X "main.Version=$(VERSION)" -X "main.BuildDate=$(BUILDDATE)" -X "main.GitCommit=$(GITCOMMIT)" -X "main.GoVersion=$(GOVERSION)" -X "$(GOMODULE)/pkg/version.GitCommitFull=$(GITCOMMITFULL)" -X "$(GOMODULE)/pkg/version.GitBranch=$(GITBRANCH)" -X "$(GOMODULE)/pkg/version.GitState=$(GITSTATE)" -X "$(GOMODULE)/pkg/version.GitSummary=$(GITSUMMARY)" -X "$(GOMODULE)/pkg/version.Version=$(VERSION)" -X "$(GOMODULE)/pkg/version.BuildDate=$(BUILDDATE)" -X "$(GOMODULE)/pkg/version.GitCommit=$(GITCOMMIT)" -X "$(GOMODULE)/pkg/version.GoVersion=$(GOVERSION)" -X "go.goexogo.com/elib/eversion.GitCommitFull=$(GITCOMMITFULL)" -X "go.goexogo.com/elib/eversion.GitBranch=$(GITBRANCH)" -X "go.goexogo.com/elib/eversion.GitState=$(GITSTATE)" -X "go.goexogo.com/elib/eversion.GitSummary=$(GITSUMMARY)" -X "go.goexogo.com/elib/eversion.Version=$(VERSION)" -X "go.goexogo.com/elib/eversion.BuildDate=$(BUILDDATE)" -X "go.goexogo.com/elib/eversion.GitCommit=$(GITCOMMIT)" -X "go.goexogo.com/elib/eversion.GoVersion=$(GOVERSION)"'
 
@@ -590,6 +603,7 @@ define make_docker_build_with_builder
 		--build-arg GOOS=$(4) \
 		--build-arg GOARCH=$(6) \
 		--build-arg GOARM=$(7) \
+		--build-arg BUILD_TAGS=$(BUILD_TAGS) \
 		--build-arg GITCOMMITFULL=$(GITCOMMITFULL) \
 		--build-arg GITBRANCH=$(GITBRANCH) \
 		--build-arg GITSTATE=$(GITSTATE) \
