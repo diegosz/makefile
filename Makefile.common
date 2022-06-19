@@ -21,7 +21,8 @@ SHELL:=/bin/bash
 gitprecommit:    ## Install .git/hooks/pre-commit script
 	@pre-commit install
 
---checkgitprecommit:
+.git/hooks/pre-commit: .pre-commit-config.yaml
+	@pre-commit install
 	@if [ ! -s .git/hooks/pre-commit ]; then \
 		echo Warning: missing .git/hooks/pre-commit script. Run make gitprecommit; exit 1; \
 	fi
@@ -69,9 +70,17 @@ cleanall: clean cleanvolumes cleanimages cleantemps cleanbases
 showimages:      ## Show project docker images
 	@docker images | grep $(DOCKER_IMAGE_GROUP_NAME) || echo No \"$(DOCKER_IMAGE_GROUP_NAME)\" images found.
 
-# tools:           ## Download and install go tools defined in tools
-tools: --checkgitprecommit
-	@echo Installing tools from tools/tools.go
+# tools:           ## Download and install go tools
+tools: .git/hooks/pre-commit tools/.tools
+	@touch tools/tools.go
+	@touch tools/.tools
+
+tools/.tools: Makefile Makefile.common tools/tools.go go.mod go.sum
+	@make .tools.install
+	@touch tools/.tools
+
+.tools.install:
+	@echo Installing tools
 	@cat tools/tools.go | grep _ | awk -F'"' '{print $$2}' | xargs -tI % sh -c 'cd $$HOME; go install %@latest'
 	@for p in  $(TOOLS_ADDITIONAL_GO_GET); \
 	do \
@@ -438,8 +447,8 @@ fixdockernet:    ## Fix docker network/dns failures during build. WARNING: it re
 CGO_ENABLED    ?= 0
 GOOS           ?= linux
 GOARCH         ?= amd64
-BUILD_FLAGS            ?= -ldflags '-s -w -X "main.GitCommitFull=$(GITCOMMITFULL)" -X "main.GitBranch=$(GITBRANCH)" -X "main.GitState=$(GITSTATE)" -X "main.GitSummary=$(GITSUMMARY)" -X "main.Version=$(VERSION)" -X "main.BuildDate=$(BUILDDATE)" -X "main.GitCommit=$(GITCOMMIT)" -X "main.GoVersion=$(GOVERSION)" -X "$(GOMODULE)/pkg/version.GitCommitFull=$(GITCOMMITFULL)" -X "$(GOMODULE)/pkg/version.GitBranch=$(GITBRANCH)" -X "$(GOMODULE)/pkg/version.GitState=$(GITSTATE)" -X "$(GOMODULE)/pkg/version.GitSummary=$(GITSUMMARY)" -X "$(GOMODULE)/pkg/version.Version=$(VERSION)" -X "$(GOMODULE)/pkg/version.BuildDate=$(BUILDDATE)" -X "$(GOMODULE)/pkg/version.GitCommit=$(GITCOMMIT)" -X "$(GOMODULE)/pkg/version.GoVersion=$(GOVERSION)"'
-BUILD_FLAGS_WINDOWSGUI ?= -ldflags '-H=windowsgui -s -w -X "main.GitCommitFull=$(GITCOMMITFULL)" -X "main.GitBranch=$(GITBRANCH)" -X "main.GitState=$(GITSTATE)" -X "main.GitSummary=$(GITSUMMARY)" -X "main.Version=$(VERSION)" -X "main.BuildDate=$(BUILDDATE)" -X "main.GitCommit=$(GITCOMMIT)" -X "main.GoVersion=$(GOVERSION)" -X "$(GOMODULE)/pkg/version.GitCommitFull=$(GITCOMMITFULL)" -X "$(GOMODULE)/pkg/version.GitBranch=$(GITBRANCH)" -X "$(GOMODULE)/pkg/version.GitState=$(GITSTATE)" -X "$(GOMODULE)/pkg/version.GitSummary=$(GITSUMMARY)" -X "$(GOMODULE)/pkg/version.Version=$(VERSION)" -X "$(GOMODULE)/pkg/version.BuildDate=$(BUILDDATE)" -X "$(GOMODULE)/pkg/version.GitCommit=$(GITCOMMIT)" -X "$(GOMODULE)/pkg/version.GoVersion=$(GOVERSION)"'
+BUILD_FLAGS            ?= -ldflags '-s -w -X "main.GitCommitFull=$(GITCOMMITFULL)" -X "main.GitBranch=$(GITBRANCH)" -X "main.GitState=$(GITSTATE)" -X "main.GitSummary=$(GITSUMMARY)" -X "main.Version=$(VERSION)" -X "main.BuildDate=$(BUILDDATE)" -X "main.GitCommit=$(GITCOMMIT)" -X "main.GoVersion=$(GOVERSION)" -X "$(GOMODULE)/pkg/version.GitCommitFull=$(GITCOMMITFULL)" -X "$(GOMODULE)/pkg/version.GitBranch=$(GITBRANCH)" -X "$(GOMODULE)/pkg/version.GitState=$(GITSTATE)" -X "$(GOMODULE)/pkg/version.GitSummary=$(GITSUMMARY)" -X "$(GOMODULE)/pkg/version.Version=$(VERSION)" -X "$(GOMODULE)/pkg/version.BuildDate=$(BUILDDATE)" -X "$(GOMODULE)/pkg/version.GitCommit=$(GITCOMMIT)" -X "$(GOMODULE)/pkg/version.GoVersion=$(GOVERSION)" -X "go.goexogo.com/elib/eversion.GitCommitFull=$(GITCOMMITFULL)" -X "go.goexogo.com/elib/eversion.GitBranch=$(GITBRANCH)" -X "go.goexogo.com/elib/eversion.GitState=$(GITSTATE)" -X "go.goexogo.com/elib/eversion.GitSummary=$(GITSUMMARY)" -X "go.goexogo.com/elib/eversion.Version=$(VERSION)" -X "go.goexogo.com/elib/eversion.BuildDate=$(BUILDDATE)" -X "go.goexogo.com/elib/eversion.GitCommit=$(GITCOMMIT)" -X "go.goexogo.com/elib/eversion.GoVersion=$(GOVERSION)"'
+BUILD_FLAGS_WINDOWSGUI ?= -ldflags '-H=windowsgui -s -w -X "main.GitCommitFull=$(GITCOMMITFULL)" -X "main.GitBranch=$(GITBRANCH)" -X "main.GitState=$(GITSTATE)" -X "main.GitSummary=$(GITSUMMARY)" -X "main.Version=$(VERSION)" -X "main.BuildDate=$(BUILDDATE)" -X "main.GitCommit=$(GITCOMMIT)" -X "main.GoVersion=$(GOVERSION)" -X "$(GOMODULE)/pkg/version.GitCommitFull=$(GITCOMMITFULL)" -X "$(GOMODULE)/pkg/version.GitBranch=$(GITBRANCH)" -X "$(GOMODULE)/pkg/version.GitState=$(GITSTATE)" -X "$(GOMODULE)/pkg/version.GitSummary=$(GITSUMMARY)" -X "$(GOMODULE)/pkg/version.Version=$(VERSION)" -X "$(GOMODULE)/pkg/version.BuildDate=$(BUILDDATE)" -X "$(GOMODULE)/pkg/version.GitCommit=$(GITCOMMIT)" -X "$(GOMODULE)/pkg/version.GoVersion=$(GOVERSION)" -X "go.goexogo.com/elib/eversion.GitCommitFull=$(GITCOMMITFULL)" -X "go.goexogo.com/elib/eversion.GitBranch=$(GITBRANCH)" -X "go.goexogo.com/elib/eversion.GitState=$(GITSTATE)" -X "go.goexogo.com/elib/eversion.GitSummary=$(GITSUMMARY)" -X "go.goexogo.com/elib/eversion.Version=$(VERSION)" -X "go.goexogo.com/elib/eversion.BuildDate=$(BUILDDATE)" -X "go.goexogo.com/elib/eversion.GitCommit=$(GITCOMMIT)" -X "go.goexogo.com/elib/eversion.GoVersion=$(GOVERSION)"'
 
 # -trimpath removes all file system paths from the compiled executable, to improve build reproducibility.
 # -mod=readonly tells the go command to ignore the vendor directory and to report an error if go.mod needs to be updated.
@@ -666,13 +675,13 @@ secrets:         ## List the secrets files
 	done
 
 # secretsdecrypt:  ## Decrypt all the secrets files in-place with sops
-secretsdecrypt: --checkgitprecommit
+secretsdecrypt: .git/hooks/pre-commit
 	@for i in $(SECRETS); do \
 		$(call make_secret_decrypt,./config/secrets/$$i); \
 	done
 
 # secretsencrypt:  ## Encrypt all the secrets files in-place with sops
-secretsencrypt: --checkgitprecommit
+secretsencrypt: .git/hooks/pre-commit
 	@for i in $(SECRETS); do \
 		$(call make_secret_encrypt,./config/secrets/$$i); \
 	done
@@ -695,14 +704,14 @@ endef
 endif
 
 # secretdecrypt:   ## Decrypt secrets in-place with sops, make secretencrypt file=./config.prod.secrets.yml
-secretdecrypt: --checkgitprecommit
+secretdecrypt: .git/hooks/pre-commit
 	@if [ -z $(file) ]; then \
 		echo File not defined. For example: make secretdecrypt file=./config/secrets/server.prod.secrets.yml; exit 1;\
 	fi
 	$(call make_secret_decrypt,$(file))
 
 # secretencrypt:   ## Encrypt secrets in-place with sops, make secretencrypt file=./config.prod.secrets.yml
-secretencrypt: --checkgitprecommit
+secretencrypt: .git/hooks/pre-commit
 	@if [ -z $(file) ]; then \
 		echo File not defined. For example: make secretencrypt file=./config/secrets/server.prod.secrets.yml; exit 1;\
 	fi
