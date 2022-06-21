@@ -168,9 +168,6 @@ define verify_tag
 	@if [ "$(vVALID)" != "yes" ]; then \
 		echo Tag is invalid. Make sure that it complies with the Semantic Versioning specification; exit 1;\
 	fi
-	@if [ "$(TAG)" != "$(VERSION)" ]; then \
-		echo TAG does not match git tag VERSION: $(VERSION); exit 1;\
-	fi
 endef
 
 define verify_tag_version
