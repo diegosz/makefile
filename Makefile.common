@@ -211,7 +211,8 @@ govet: tools
 gomodlistupds:   ## List available minor and patch dependency updates
 	@go list -u -m all | grep ]
 
-gomodupdateall:  ## Get available minor and patch dependency updates
+# gomodupdateall:  ## Get available minor and patch dependency updates
+gomodupdateall: goexogoupdate
 	@go get -t -u ./...
 
 goexogotoken:    ## Set private repo access token in .netrc file in home folder
