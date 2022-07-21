@@ -537,6 +537,7 @@ define make_release_binary_with_docker_builder
 	@$(call make_docker_build_with_builder,$(1),$(DOCKER_IMAGE_GROUP_NAME)/temp-build-$(1):$(TAG),$(NOCACHE),$(3),$(4),$(5),$(6),$(7))
 	docker container create --name $(DOCKER_IMAGE_GROUP_NAME)_temp_build_$(1) $(DOCKER_IMAGE_GROUP_NAME)/temp-build-$(1):$(TAG)
 	docker container cp $(DOCKER_IMAGE_GROUP_NAME)_temp_build_$(1):/app/exe ./$(RELEASE_DIR)/$(TAG)/$(3)_$(5)/$(2)
+	docker container cp $(DOCKER_IMAGE_GROUP_NAME)_temp_build_$(1):/app/exe ./$(BUILD_DIR)/$(2)
 	docker container rm $(DOCKER_IMAGE_GROUP_NAME)_temp_build_$(1)
 	docker rmi $(DOCKER_IMAGE_GROUP_NAME)/temp-build-$(1):$(TAG)
 endef
@@ -554,6 +555,9 @@ define make_docker_release_with_docker_builder
 	@if [ "$(LATEST)" = "yes" ]; then \
 		docker tag $(DOCKER_REGISTRY)/$(DOCKER_IMAGE_GROUP_NAME)/$(svc):$(TAG) $(DOCKER_REGISTRY)/$(DOCKER_IMAGE_GROUP_NAME)/$(svc):latest; \
 	fi
+	docker container create --name $(DOCKER_REGISTRY)_$(DOCKER_IMAGE_GROUP_NAME)_temp_build_$(svc) $(DOCKER_REGISTRY)/$(DOCKER_IMAGE_GROUP_NAME)/$(svc):$(TAG)
+	docker container cp $(DOCKER_REGISTRY)_$(DOCKER_IMAGE_GROUP_NAME)_temp_build_$(svc):/app/exe ./$(BUILD_DIR)/$(svc)
+	docker container rm $(DOCKER_REGISTRY)_$(DOCKER_IMAGE_GROUP_NAME)_temp_build_$(svc)
 endef
 
 define make_docker_push
